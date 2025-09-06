@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en" x-data="{ darkMode: false }" x-init="initDarkMode()" :class="{'dark': darkMode}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title x-text="t('app_name')">Shopink</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
+  <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+  <script type="module">
+    import { Application } from 'https://unpkg.com/@hotwired/stimulus?module'
+    window.Stimulus = Application.start()
+  </script>
+
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#000000">
+  <link rel="apple-touch-icon" href="/assets/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+  <style>
+    body {
+      font-family: Inter, system-ui, sans-serif;
+      background-color: #ffffff;
+      color: #1f2937;
+    }
+    .dark body { background: #111827; color: #e5e7eb; }
+    .filter-btn.active { @apply bg-black dark:bg-white text-white dark:text-black; }
+    .filter-btn { @apply text-black dark:text-white bg-gray-100 dark:bg-gray-800; }
+    .hide-scrollbar::-webkit-scrollbar { display: none; }
+    .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+    .chatbot { position: fixed; bottom: 80px; right: 16px; z-index: 50; }
+    .analytics { position: fixed; top: 60px; left: 16px; z-index: 40; max-width: 300px; }
+  </style>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('✅ SW registered', reg))
+          .catch(err => console.log('❌ SW registration failed', err));
+      });
+    }
+  </script>
+</head>
+<body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 max-w-sm mx-auto pb-24">
+
+  <div x-data="shopinkApp()" x-init="init()" class="min-h-screen">
+    <!-- HEADER -->
+    <header class="flex justify-between items-center p-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+      <button @click="toggleMenu" class="text-xl">☰</button>
+      <h1 class="font-bold text-lg" x-text="t('app_name')"></h1>
+      <div class="flex items-center space-x-3">
+        <select @change="setLanguage($event.target.value)" class="text-xs bg-gray-100 dark:bg-gray-700 rounded px-2 py-1">
+          <option value="en">EN</option>
+          <option value="es">ES</option>
+          <option value="fr">FR</option>
+          <option value="zh">中文</option>
+        </select>
+        <button @click="toggleDarkMode" class="text-xl">
+          <span x-show="!darkMode">☀️</span>
+          <span x-show="darkMode">🌙</span>
+        </button>
+        <div class="relative">
+          <button @click="toggleNotifications" class="text-xl">🔔</button>
+          <span x-show="notificationCount > 0" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" x-text="notificationCount"></span>
+        </div>
+        <template x-if="user">
+          <div @click="showProfile = true" class="cursor-pointer">
+            <span x-text="`Hi, ${user.name.split(' ')[0]}`"></span>
+          </div>
+        </template>
+        <template x-if="!user">
+          <button @click="showLogin = true" class="text-sm underline" x-text="t('login')"></button>
+        </template>
+      </div>
+    </header>
+
+    <!-- LOGIN MODAL -->
+    <div x-show="showLogin" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div @click.outside="showLogin = false" class="bg-white dark:bg-gray-800 p-6 rounded-lg w-80">
+        <h3 class="font-bold mb-4" x-text="t('login')">Login</h3>
+        <input x-model="loginForm.email" placeholder="Email" class="w-full p-2 mb-3 border rounded dark:bg-gray-700 dark:border-gray-600">
+        <input x-model="loginForm.password" type="password" placeholder="Password" class="w-full p-2 mb-4 border rounded dark:bg-gray-700 dark:border-gray-600">
+        <div class="flex justify-between">
+          <button @click="showLogin = false" class="px-4 py-2">Cancel</button>
+          <button @click="login()" class="px-4 py-2 bg-black text-white dark:bg-white dark:text-black">Login</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- PROFILE MODAL -->
+    <div x-show="showProfile" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div @click.outside="showProfile = false" class="bg-white dark:bg-gray-800 p-6 rounded-lg w-80">
+        <h3 class="font-bold mb-4" x-text="t('profile')">Profile</h3>
+        <div class="mb-4" x-text="t('hello', { name: user.name })"></div>
+        <button @click="logout()" class="w-full py-2 bg-red-500 text-white rounded" x-text="t('logout')"></button>
+      </div>
+    </div>
+
+    <!-- HERO BANNER -->
+    <div class="relative bg-cover bg-center h-40 mb-6 overflow-hidden">
+      <img src="https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=375&q=80" alt="Sale Banner" class="w-full h-full object-cover">
+      <div class="absolute inset-0 bg-black bg-opacity-40 flex flex-col items-center justify-center text-white text-center p-4">
+        <h2 class="text-lg font-bold mb-2" x-text="t('hero_title')"></h2>
+        <button 
+          hx-get="/shop-now" 
+          hx-target="#main-content"
+          class="bg-yellow-400 text-black px-4 py-2 rounded-full font-bold text-sm"
+          x-text="t('shop_now')">
+        </button>
+      </div>
+    </div>
+
+    <!-- NEW ARRIVALS -->
+    <section class="px-4 mb-6" id="new-arrivals">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="font-bold text-lg" x-text="t('new_arrival')"></h2>
+        <a href="#" class="text-sm text-gray-600 dark:text-gray-400" x-text="t('see_all')"></a>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <template x-for="product in newArrivals" :key="product.id">
+          <div 
+            @click="viewProduct(product)"
+            class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm border dark:border-gray-700 cursor-pointer"
+            :class="{'border-red-200 dark:border-red-800': product.favorite}">
+            <img :src="product.image" :alt="product.name" class="w-full h-32 object-cover">
+            <div class="p-3">
+              <h3 class="text-sm font-medium" x-text="product.name"></h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="product.category"></p>
+              <p class="font-bold mt-1" x-text="product.price"></p>
+              <button 
+                @click.stop="toggleFavorite(product.id)"
+                class="text-red-500 dark:text-red-400 mt-2 text-lg"
+                :class="{'text-red-600 dark:text-red-300 fill-current': product.favorite}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" x-show="!product.favorite">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" x-show="product.favorite" x-cloak>
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- BEST SELLERS WITH FILTERS -->
+    <section class="px-4 mb-6" id="best-sellers">
+      <h2 class="font-bold text-lg mb-3" x-text="t('best_seller')"></h2>
+      <div class="flex space-x-2 mb-4 overflow-x-auto pb-2 hide-scrollbar">
+        <template x-for="(filter, index) in filters" :key="index">
+          <button 
+            @click="setActiveFilter(filter.label)"
+            class="filter-btn text-xs font-medium px-3 py-1.5 rounded-full whitespace-nowrap"
+            :class="{'active': activeFilter === filter.label}">
+            <span x-text="filter.label"></span>
+          </button>
+        </template>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <template x-for="product in filteredBestSellers" :key="product.id">
+          <div 
+            @click="viewProduct(product)"
+            class="bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm border dark:border-gray-700 cursor-pointer"
+            :class="{'border-red-200 dark:border-red-800': product.favorite}">
+            <div class="relative">
+              <img :src="product.image" :alt="product.name" class="w-full h-32 object-cover">
+              <span x-show="product.discount" class="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full" x-text="product.discount"></span>
+            </div>
+            <div class="p-3">
+              <h3 class="text-sm font-medium" x-text="product.name"></h3>
+              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="product.category"></p>
+              <p class="font-bold mt-1" x-text="product.price"></p>
+              <button 
+                @click.stop="toggleFavorite(product.id)"
+                class="text-red-500 dark:text-red-400 mt-2 text-lg"
+                :class="{'text-red-600 dark:text-red-300 fill-current': product.favorite}">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" x-show="!product.favorite">
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor" x-show="product.favorite" x-cloak>
+                  <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </template>
+      </div>
+    </section>
+
+    <!-- ANALYTICS DASHBOARD (Mini) -->
+    <div x-show="user" class="analytics bg-white dark:bg-gray-800 p-3 rounded-lg shadow-md">
+      <h4 class="font-bold mb-2">📊 Dashboard</h4>
+      <div class="text-sm space-y-1">
+        <div>Products Viewed: <span class="font-bold" x-text="analytics.productsViewed">12</span></div>
+        <div>Favorites: <span class="font-bold" x-text="analytics.favorites">3</span></div>
+        <div>Cart Items: <span class="font-bold" x-text="analytics.cartItems">2</span></div>
+      </div>
+    </div>
+
+    <!-- CHATBOT WIDGET -->
+    <div class="chatbot">
+      <button 
+        @click="toggleChat"
+        class="w-12 h-12 rounded-full bg-blue-500 text-white flex items-center justify-center shadow-lg hover:bg-blue-600"
+        x-text="chatOpen ? '✕' : '💬'">
+      </button>
+      <div x-show="chatOpen" class="mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-3">
+        <div class="mb-3 h-32 overflow-y-auto space-y-2" x-html="chatMessages"></div>
+        <input 
+          @keyup.enter="sendMessage"
+          x-model="chatInput"
+          placeholder="Ask me anything..."
+          class="w-full p-2 text-sm border rounded dark:bg-gray-700 dark:border-gray-600"
+        >
+      </div>
+    </div>
+
+    <!-- FOOTER NAV -->
+    <footer class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 flex justify-around py-2 px-4">
+      <button 
+        @click="setActiveTab('home')"
+        class="flex flex-col items-center text-xs"
+        :class="activeTab === 'home' ? 'text-black dark:text-white' : 'text-gray-500'">
+        <span>🏠</span>
+        <span>Home</span>
+      </button>
+      <button 
+        @click="setActiveTab('cart')"
+        class="flex flex-col items-center text-xs"
+        :class="activeTab === 'cart' ? 'text-black dark:text-white' : 'text-gray-500'">
+        <span>🛒</span>
+        <span>Cart</span>
+      </button>
+      <button 
+        @click="setActiveTab('wishlist')"
+        class="flex flex-col items-center text-xs"
+        :class="activeTab === 'wishlist' ? 'text-black dark:text-white' : 'text-gray-500'">
+        <span>❤️</span>
+        <span>Wishlist</span>
+      </button>
+      <button 
+        @click="setActiveTab('profile')"
+        class="flex flex-col items-center text-xs"
+        :class="activeTab === 'profile' ? 'text-black dark:text-white' : 'text-gray-500'">
+        <span>👤</span>
+        <span>Profile</span>
+      </button>
+    </footer>
+
+  </div>
+
+  <script>
+    const helpers = {
+      debounce: (func, delay) => {
+        let timeoutId;
+        return (...args) => {
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => func.apply(this, args), delay);
+        };
+      },
+      formatCurrency: (amount) => {
+        return new Intl.NumberFormat('en-US', {
+          style: 'currency',
+          currency: 'USD'
+        }).format(amount);
+      },
+      scrollToTop: () => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+      showToast: (message) => {
+        let toast = document.createElement('div');
+        toast.innerText = message;
+        toast.className = 'fixed bottom-20 left-1/2 transform -translate-x-1/2 bg-black dark:bg-gray-800 text-white px-4 py-2 rounded-lg z-50';
+        document.body.appendChild(toast);
+        setTimeout(() => toast.remove(), 3000);
+      }
+    };
+
+    const i18n = {
+      current: 'en',
+      translations: {},
+      async load(locale) {
+        try {
+          const res = await fetch(`/locales/${locale}.json`);
+          this.translations[locale] = await res.json();
+          this.current = locale;
+          localStorage.setItem('lang', locale);
+        } catch (e) {
+          console.warn(`Failed to load ${locale}`, e);
+        }
+      },
+      t(key, params = {}) {
+        const dict = this.translations[this.current] || {};
+        let str = dict[key] || key;
+        Object.keys(params).forEach(k => {
+          str = str.replace(`{{${k}}}`, params[k]);
+        });
+        return str;
+      }
+    };
+
+    function shopinkApp() {
+      return {
+        t: (key, params) => i18n.t(key, params),
+        setLanguage(lang) {
+          i18n.load(lang);
+        },
+
+        darkMode: false,
+        initDarkMode() {
+          if (localStorage.getItem('darkMode') === 'true') {
+            this.darkMode = true;
+          } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            this.darkMode = true;
+          }
+          this.applyDarkMode();
+        },
+        toggleDarkMode() {
+          this.darkMode = !this.darkMode;
+          localStorage.setItem('darkMode', this.darkMode);
+          this.applyDarkMode();
+        },
+        applyDarkMode() {
+          if (this.darkMode) {
+            document.documentElement.classList.add('dark');
+          } else {
+            document.documentElement.classList.remove('dark');
+          }
+        },
+
+        user: null,
+        token: null,
+        showLogin: false,
+        showProfile: false,
+        loginForm: { email: 'user@example.com', password: 'password123' },
+        async login() {
+          try {
+            const res = await fetch('/api/auth/login', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(this.loginForm)
+            });
+            const data = await res.json();
+            if (data.token) {
+              this.token = data.token;
+              this.user = data.user;
+              this.showLogin = false;
+              localStorage.setItem('token', data.token);
+              helpers.showToast(`Welcome back, ${data.user.name}!`);
+            } else {
+              helpers.showToast("Login failed");
+            }
+          } catch (e) {
+            helpers.showToast("Network error");
+          }
+        },
+        async logout() {
+          this.user = null;
+          this.token = null;
+          localStorage.removeItem('token');
+          this.showProfile = false;
+          helpers.showToast("Logged out");
+        },
+
+        notificationCount: 2,
+        activeTab: 'home',
+        activeFilter: 'All',
+        chatOpen: false,
+        chatInput: '',
+        chatMessages: '<div class="text-xs">🤖 Hi! How can I help?</div>',
+
+        analytics: {
+          productsViewed: 12,
+          favorites: 3,
+          cartItems: 2
+        },
+
+        newArrivals: [],
+        bestSellers: [],
+        filters: [
+          { label: "All", active: true },
+          { label: "Nike" },
+          { label: "Adidas" },
+          { label: "New Balance" },
+          { label: "Puma" }
+        ],
+
+        get filteredBestSellers() {
+          if (this.activeFilter === 'All') return this.bestSellers;
+          return this.bestSellers.filter(p => p.brand === this.activeFilter);
+        },
+
+        async init() {
+          await i18n.load('en');
+          const savedLang = localStorage.getItem('lang');
+          if (savedLang) await i18n.load(savedLang);
+          this.loadFromAPI();
+          this.loadFavorites();
+          this.loadUser();
+        },
+
+        async loadUser() {
+          const token = localStorage.getItem('token');
+          if (token) {
+            try {
+              const res = await fetch('/api/user/profile', {
+                headers: { 'Authorization': `Bearer ${token}` }
+              });
+              const data = await res.json();
+              if (data.user) {
+                this.user = data.user;
+                this.token = token;
+              }
+            } catch (e) {
+              localStorage.removeItem('token');
+            }
+          }
+        },
+
+        async loadFromAPI() {
+          try {
+            const newArrivals = await fetch('/api/products/new-arrivals').then(r => r.json());
+            const bestSellers = await fetch('/api/products/best-sellers').then(r => r.json());
+            this.newArrivals = newArrivals;
+            this.bestSellers = bestSellers;
+          } catch (err) {
+            console.error("Failed to load products", err);
+          }
+        },
+
+        async toggleFavorite(id) {
+          try {
+            const response = await fetch('/api/favorites/toggle', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id })
+            });
+            const result = await response.json();
+            this.updateFavoriteState(result.favorites);
+            helpers.showToast(result.favorites.includes(id) ? "Added to favorites ❤️" : "Removed from favorites");
+            this.analytics.favorites = result.favorites.length;
+          } catch (err) {
+            helpers.showToast("Failed to update favorites");
+          }
+        },
+
+        updateFavoriteState(favoriteIds) {
+          const updateList = (list) => {
+            list.forEach(p => p.favorite = favoriteIds.includes(p.id));
+          };
+          updateList(this.newArrivals);
+          updateList(this.bestSellers);
+        },
+
+        async loadFavorites() {
+          try {
+            const response = await fetch('/api/favorites');
+            const favoriteIds = await response.json();
+            this.updateFavoriteState(favoriteIds);
+            this.analytics.favorites = favoriteIds.length;
+          } catch (err) {
+            console.warn("Could not load favorites", err);
+          }
+        },
+
+        toggleMenu() {
+          helpers.showToast("Menu opened");
+        },
+        toggleNotifications() {
+          helpers.showToast("Notifications opened");
+        },
+        setActiveTab(tab) {
+          this.activeTab = tab;
+          helpers.showToast(`Switched to ${tab}`);
+        },
+        setActiveFilter(filter) {
+          this.activeFilter = filter;
+        },
+        viewProduct(product) {
+          this.analytics.productsViewed++;
+          helpers.showToast(`Viewing ${product.name}`);
+        },
+
+        toggleChat() {
+          this.chatOpen = !this.chatOpen;
+        },
+        sendMessage() {
+          if (!this.chatInput.trim()) return;
+          this.chatMessages += `<div class="text-xs text-right">👤 ${this.chatInput}</div>`;
+          this.simulateBotReply();
+          this.chatInput = '';
+        },
+        simulateBotReply() {
+          setTimeout(() => {
+            const replies = [
+              "🤖 Thanks for your message!",
+              "🤖 I'm here to help with product info.",
+              "🤖 Check out our new arrivals!",
+              "🤖 Did you know we have 50% off?",
+              "🤖 Your favorites are saved securely."
+            ];
+            this.chatMessages += `<div class="text-xs">🤖 ${replies[Math.floor(Math.random() * replies.length)]}</div>`;
+          }, 500);
+        }
+      };
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      Stimulus.register('favorites', class extends Stimulus.Controller {
+        static targets = [ "icon" ]
+        toggle(event) {
+          const id = event.params.id;
+          const app = document.querySelector('[x-data]').__x;
+          app.toggleFavorite(id);
+        }
+      });
+
+      Stimulus.register('filter', class extends Stimulus.Controller {
+        change(event) {
+          const label = event.target.textContent.trim();
+          const app = document.querySelector('[x-data]').__x;
+          app.setActiveFilter(label);
+        }
+      });
+
+      Stimulus.register('cart', class extends Stimulus.Controller {
+        addToCart(event) {
+          const id = event.params.id;
+          helpers.showToast(`Item ${id} added to cart 🛒`);
+          const app = document.querySelector('[x-data]').__x;
+          app.analytics.cartItems++;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
