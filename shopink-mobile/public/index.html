@@ -7,6 +7,7 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
   <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
   <script type="module">
     import { Application } from 'https://unpkg.com/@hotwired/stimulus?module'
     window.Stimulus = Application.start()
@@ -46,26 +47,32 @@
 </head>
 <body class="bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100 max-w-sm mx-auto pb-24">
 
+  <!-- Alpine Store -->
   <div x-data="shopinkApp()" x-init="init()" class="min-h-screen">
+
     <!-- HEADER -->
     <header class="flex justify-between items-center p-4 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
       <button @click="toggleMenu" class="text-xl">☰</button>
       <h1 class="font-bold text-lg" x-text="t('app_name')"></h1>
       <div class="flex items-center space-x-3">
+        <!-- Language Selector -->
         <select @change="setLanguage($event.target.value)" class="text-xs bg-gray-100 dark:bg-gray-700 rounded px-2 py-1">
           <option value="en">EN</option>
           <option value="es">ES</option>
           <option value="fr">FR</option>
           <option value="zh">中文</option>
         </select>
+        <!-- Dark Mode Toggle -->
         <button @click="toggleDarkMode" class="text-xl">
           <span x-show="!darkMode">☀️</span>
           <span x-show="darkMode">🌙</span>
         </button>
+        <!-- Notifications -->
         <div class="relative">
           <button @click="toggleNotifications" class="text-xl">🔔</button>
           <span x-show="notificationCount > 0" class="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-5 w-5 flex items-center justify-center" x-text="notificationCount"></span>
         </div>
+        <!-- Profile -->
         <template x-if="user">
           <div @click="showProfile = true" class="cursor-pointer">
             <span x-text="`Hi, ${user.name.split(' ')[0]}`"></span>
@@ -86,6 +93,23 @@
         <div class="flex justify-between">
           <button @click="showLogin = false" class="px-4 py-2">Cancel</button>
           <button @click="login()" class="px-4 py-2 bg-black text-white dark:bg-white dark:text-black">Login</button>
+        </div>
+        <div class="mt-4 text-center">
+          <button @click="showSignup = true; showLogin = false" class="text-sm text-blue-500">Don't have an account? Sign up</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- SIGNUP MODAL -->
+    <div x-show="showSignup" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div @click.outside="showSignup = false" class="bg-white dark:bg-gray-800 p-6 rounded-lg w-80">
+        <h3 class="font-bold mb-4">Sign Up</h3>
+        <input x-model="signupForm.email" placeholder="Email" type="email" class="w-full p-2 mb-3 border rounded dark:bg-gray-700 dark:border-gray-600">
+        <input x-model="signupForm.password" type="password" placeholder="Password" class="w-full p-2 mb-3 border rounded dark:bg-gray-700 dark:border-gray-600">
+        <input x-model="signupForm.name" placeholder="Full Name" class="w-full p-2 mb-4 border rounded dark:bg-gray-700 dark:border-gray-600">
+        <div class="flex justify-between">
+          <button @click="showSignup = false" class="px-4 py-2">Cancel</button>
+          <button @click="signup()" class="px-4 py-2 bg-black text-white dark:bg-white dark:text-black">Sign Up</button>
         </div>
       </div>
     </div>
@@ -128,8 +152,11 @@
             <img :src="product.image" :alt="product.name" class="w-full h-32 object-cover">
             <div class="p-3">
               <h3 class="text-sm font-medium" x-text="product.name"></h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="product.category"></p>
-              <p class="font-bold mt-1" x-text="product.price"></p>
+              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="product.category_name"></p>
+              <p class="font-bold mt-1" x-text="formatPrice(product.price)"></p>
+              <template x-if="product.discount">
+                <span class="text-xs bg-red-500 text-white px-2 py-1 rounded-full" x-text="product.discount"></span>
+              </template>
               <button 
                 @click.stop="toggleFavorite(product.id)"
                 class="text-red-500 dark:text-red-400 mt-2 text-lg"
@@ -168,12 +195,14 @@
             :class="{'border-red-200 dark:border-red-800': product.favorite}">
             <div class="relative">
               <img :src="product.image" :alt="product.name" class="w-full h-32 object-cover">
-              <span x-show="product.discount" class="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full" x-text="product.discount"></span>
+              <template x-if="product.discount">
+                <span class="absolute top-2 left-2 bg-red-500 text-white text-xs px-2 py-1 rounded-full" x-text="product.discount"></span>
+              </template>
             </div>
             <div class="p-3">
               <h3 class="text-sm font-medium" x-text="product.name"></h3>
-              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="product.category"></p>
-              <p class="font-bold mt-1" x-text="product.price"></p>
+              <p class="text-xs text-gray-500 dark:text-gray-400" x-text="product.category_name"></p>
+              <p class="font-bold mt-1" x-text="formatPrice(product.price)"></p>
               <button 
                 @click.stop="toggleFavorite(product.id)"
                 class="text-red-500 dark:text-red-400 mt-2 text-lg"
@@ -253,7 +282,15 @@
 
   </div>
 
+  <!-- Vanilla JS Helpers -->
   <script>
+    // Initialize Supabase Client
+    const supabase = window.supabase.createClient(
+      'https://zelcjoougovkhzxmcqzp.supabase.co',
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InplbGNqb291Z292a2h6eG1jcXpwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcxNzYyOTMsImV4cCI6MjA3Mjc1MjI5M30.6lVcyIOu4jjhVO-jr-c98j-G30eBkj83c7IXugmlcB0'
+    );
+
+    // Simple Helpers
     const helpers = {
       debounce: (func, delay) => {
         let timeoutId;
@@ -280,6 +317,7 @@
       }
     };
 
+    // i18n Engine
     const i18n = {
       current: 'en',
       translations: {},
@@ -303,13 +341,16 @@
       }
     };
 
+    // Alpine.js Component
     function shopinkApp() {
       return {
+        // i18n
         t: (key, params) => i18n.t(key, params),
         setLanguage(lang) {
           i18n.load(lang);
         },
 
+        // Dark Mode
         darkMode: false,
         initDarkMode() {
           if (localStorage.getItem('darkMode') === 'true') {
@@ -332,40 +373,77 @@
           }
         },
 
+        // Auth
         user: null,
-        token: null,
         showLogin: false,
+        showSignup: false,
         showProfile: false,
-        loginForm: { email: 'user@example.com', password: 'password123' },
+        loginForm: { email: '', password: '' },
+        signupForm: { email: '', password: '', name: '' },
+
         async login() {
-          try {
-            const res = await fetch('/api/auth/login', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(this.loginForm)
-            });
-            const data = await res.json();
-            if (data.token) {
-              this.token = data.token;
-              this.user = data.user;
-              this.showLogin = false;
-              localStorage.setItem('token', data.token);
-              helpers.showToast(`Welcome back, ${data.user.name}!`);
-            } else {
-              helpers.showToast("Login failed");
-            }
-          } catch (e) {
-            helpers.showToast("Network error");
+          const { error } = await supabase.auth.signInWithPassword({
+            email: this.loginForm.email,
+            password: this.loginForm.password
+          });
+
+          if (error) {
+            helpers.showToast("Login failed: " + error.message);
+          } else {
+            this.showLogin = false;
+            await this.loadUser();
+            helpers.showToast("Welcome back!");
           }
         },
+
+        async signup() {
+          const { data, error } = await supabase.auth.signUp({
+            email: this.signupForm.email,
+            password: this.signupForm.password,
+            options: {
+              data: {
+                name: this.signupForm.name
+              }
+            }
+          });
+
+          if (error) {
+            helpers.showToast("Signup failed: " + error.message);
+          } else {
+            // Insert into users table
+            await supabase.from('users').insert({
+              id: data.user.id,
+              email: this.signupForm.email,
+              name: this.signupForm.name
+            });
+            this.showSignup = false;
+            helpers.showToast("Account created! Please check email for confirmation.");
+          }
+        },
+
         async logout() {
+          await supabase.auth.signOut();
           this.user = null;
-          this.token = null;
-          localStorage.removeItem('token');
           this.showProfile = false;
           helpers.showToast("Logged out");
         },
 
+        async loadUser() {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (user) {
+            const { data: profile } = await supabase
+              .from('users')
+              .select('id, email, name, role')
+              .eq('id', user.id)
+              .single();
+
+            this.user = profile || { id: user.id, email: user.email, name: user.email };
+          } else {
+            this.user = null;
+          }
+        },
+
+        // App State
         notificationCount: 2,
         activeTab: 'home',
         activeFilter: 'All',
@@ -373,12 +451,14 @@
         chatInput: '',
         chatMessages: '<div class="text-xs">🤖 Hi! How can I help?</div>',
 
-        analytics: {
+        // Analytics
+  analytics: {
           productsViewed: 12,
-          favorites: 3,
-          cartItems: 2
+          favorites: 0,
+          cartItems: 0
         },
 
+        // Data
         newArrivals: [],
         bestSellers: [],
         filters: [
@@ -389,82 +469,130 @@
           { label: "Puma" }
         ],
 
+        // Computed
         get filteredBestSellers() {
           if (this.activeFilter === 'All') return this.bestSellers;
           return this.bestSellers.filter(p => p.brand === this.activeFilter);
         },
 
+        formatPrice(price) {
+          return helpers.formatCurrency(price);
+        },
+
+        // Methods
         async init() {
           await i18n.load('en');
           const savedLang = localStorage.getItem('lang');
           if (savedLang) await i18n.load(savedLang);
-          this.loadFromAPI();
-          this.loadFavorites();
-          this.loadUser();
-        },
 
-        async loadUser() {
-          const token = localStorage.getItem('token');
-          if (token) {
-            try {
-              const res = await fetch('/api/user/profile', {
-                headers: { 'Authorization': `Bearer ${token}` }
-              });
-              const data = await res.json();
-              if (data.user) {
-                this.user = data.user;
-                this.token = token;
-              }
-            } catch (e) {
-              localStorage.removeItem('token');
+          // Listen for auth changes
+          supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN') {
+              this.loadUser();
+            } else if (event === 'SIGNED_OUT') {
+              this.user = null;
             }
-          }
+          });
+
+          await this.loadUser();
+          await this.loadProducts();
+          await this.loadFavorites();
         },
 
-        async loadFromAPI() {
-          try {
-            const newArrivals = await fetch('/api/products/new-arrivals').then(r => r.json());
-            const bestSellers = await fetch('/api/products/best-sellers').then(r => r.json());
-            this.newArrivals = newArrivals;
-            this.bestSellers = bestSellers;
-          } catch (err) {
-            console.error("Failed to load products", err);
-          }
+        async loadProducts() {
+          // Load categories first
+          const {  categories } = await supabase
+            .from('categories')
+            .select('id, name');
+
+          const categoryMap = {};
+          categories.forEach(cat => {
+            categoryMap[cat.id] = cat.name;
+          });
+
+          // Load new arrivals (first 2 products)
+          const {  newArrivals } = await supabase
+            .from('products')
+            .select('*')
+            .order('id', { ascending: true })
+            .limit(2);
+
+          // Load best sellers (next 2 products)
+          const {  bestSellers } = await supabase
+            .from('products')
+            .select('*')
+            .order('id', { ascending: true })
+            .range(2, 3);
+
+          // Enhance with category names
+          const enhanceProduct = (p) => ({
+            ...p,
+            category_name: categoryMap[p.category_id] || 'Unknown',
+            favorite: false
+          });
+
+          this.newArrivals = newArrivals ? newArrivals.map(enhanceProduct) : [];
+          this.bestSellers = bestSellers ? bestSellers.map(enhanceProduct) : [];
+
+          await this.loadFavorites(); // Update favorites status
         },
 
-        async toggleFavorite(id) {
-          try {
-            const response = await fetch('/api/favorites/toggle', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id })
-            });
-            const result = await response.json();
-            this.updateFavoriteState(result.favorites);
-            helpers.showToast(result.favorites.includes(id) ? "Added to favorites ❤️" : "Removed from favorites");
-            this.analytics.favorites = result.favorites.length;
-          } catch (err) {
-            helpers.showToast("Failed to update favorites");
+        async toggleFavorite(productId) {
+          if (!this.user) {
+            helpers.showToast("Please login to save favorites");
+            return;
           }
-        },
 
-        updateFavoriteState(favoriteIds) {
-          const updateList = (list) => {
-            list.forEach(p => p.favorite = favoriteIds.includes(p.id));
-          };
-          updateList(this.newArrivals);
-          updateList(this.bestSellers);
+          const {  existingFavorite } = await supabase
+            .from('favorites')
+            .select('*')
+            .eq('user_id', this.user.id)
+            .eq('product_id', productId)
+            .single();
+
+          if (existingFavorite) {
+            // Remove favorite
+            await supabase
+              .from('favorites')
+              .delete()
+              .eq('user_id', this.user.id)
+              .eq('product_id', productId);
+            helpers.showToast("Removed from favorites");
+          } else {
+            // Add favorite
+            await supabase
+              .from('favorites')
+              .insert({
+                user_id: this.user.id,
+                product_id: productId
+              });
+            helpers.showToast("Added to favorites ❤️");
+          }
+
+          await this.loadFavorites();
         },
 
         async loadFavorites() {
-          try {
-            const response = await fetch('/api/favorites');
-            const favoriteIds = await response.json();
-            this.updateFavoriteState(favoriteIds);
-            this.analytics.favorites = favoriteIds.length;
-          } catch (err) {
-            console.warn("Could not load favorites", err);
-          }
+          if (!this.user) return;
+
+          const { data: favorites } = await supabase
+            .from('favorites')
+            .select('product_id')
+            .eq('user_id', this.user.id);
+
+          const favoriteIds = favorites ? favorites.map(f => f.product_id) : [];
+
+          // Update products with favorite status
+          const updateFavorites = (products) => {
+            return products.map(p => ({
+              ...p,
+              favorite: favoriteIds.includes(p.id)
+            }));
+          };
+
+          this.newArrivals = updateFavorites(this.newArrivals);
+          this.bestSellers = updateFavorites(this.bestSellers);
+          this.analytics.favorites = favoriteIds.length;
         },
 
         toggleMenu() {
@@ -485,6 +613,7 @@
           helpers.showToast(`Viewing ${product.name}`);
         },
 
+        // Chatbot
         toggleChat() {
           this.chatOpen = !this.chatOpen;
         },
@@ -505,10 +634,11 @@
             ];
             this.chatMessages += `<div class="text-xs">🤖 ${replies[Math.floor(Math.random() * replies.length)]}</div>`;
           }, 500);
-        }
+          }
       };
     }
 
+    // Stimulus Controllers (simulated)
     document.addEventListener('DOMContentLoaded', () => {
       Stimulus.register('favorites', class extends Stimulus.Controller {
         static targets = [ "icon" ]
